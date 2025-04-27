@@ -41,6 +41,9 @@ contract AssetBackedToken is ERC20, Ownable {
     // Asset Management
     mapping(bytes32 => Asset) public assets;
     bytes32[] public assetList;
+    
+    // متغير لتتبع الوزن الإجمالي النشط
+    uint256 public totalActiveWeight = 0;
 
     // Total weights must equal 100
     uint256 public constant TOTAL_WEIGHT = 100;
@@ -64,13 +67,14 @@ contract AssetBackedToken is ERC20, Ownable {
     // Add New Asset
     function addAsset(string memory name, uint256 weight, address priceFeedAddress) public onlyOwner {
         require(weight > 0 && weight <= 100, "Weight must be between 1 and 100");
-        require(getTotalWeight().add(weight) <= TOTAL_WEIGHT, "Total weight exceeds 100");
+        require(totalActiveWeight.add(weight) <= TOTAL_WEIGHT, "Total weight exceeds 100");
 
         bytes32 assetId = keccak256(abi.encodePacked(name));
         require(!assets[assetId].isActive, "Asset already exists");
 
         assets[assetId] = Asset(name, weight, priceFeedAddress, true);
         assetList.push(assetId);
+        totalActiveWeight = totalActiveWeight.add(weight);
 
         emit AssetAdded(assetId, name, weight, priceFeedAddress);
     }
@@ -103,41 +107,49 @@ contract AssetBackedToken is ERC20, Ownable {
         require(assets[assetId].isActive, "Asset does not exist");
         require(newWeight > 0 && newWeight <= 100, "Weight must be between 1 and 100");
 
-        uint256 totalWeightAfterUpdate = getTotalWeight().sub(assets[assetId].weight).add(newWeight);
+        uint256 totalWeightAfterUpdate = totalActiveWeight.sub(assets[assetId].weight).add(newWeight);
         require(totalWeightAfterUpdate <= TOTAL_WEIGHT, "Total weight exceeds 100");
 
+        totalActiveWeight = totalWeightAfterUpdate;
         assets[assetId].weight = newWeight;
         assets[assetId].priceFeedAddress = newPriceFeedAddress;
 
         emit AssetUpdated(assetId, assets[assetId].name, newWeight, newPriceFeedAddress);
     }
 
-    // Remove Asset
+    // Remove Asset - Improved Version
     function removeAsset(bytes32 assetId) public onlyOwner {
-        require(assets[assetId].isActive, "Asset does not exist");
-        require(assetList.length > 1, "At least one asset must be maintained");
+        require(assets[assetId].isActive, "Asset does not exist or already inactive");
+        require(assetList.length > 1, "Cannot remove the last asset");
 
-        emit AssetRemoved(assetId, assets[assetId].name);
-
+        // Update total weight before removing
+        totalActiveWeight = totalActiveWeight.sub(assets[assetId].weight);
+        
+        // Store asset name for event before deactivation
+        string memory assetName = assets[assetId].name;
+        
+        // Deactivate the asset
         assets[assetId].isActive = false;
 
-        for (uint256 i = 0; i < assetList.length; i++) {
+        // Gas-efficient removal from array
+        uint256 lastIndex = assetList.length - 1;
+        for (uint256 i = 0; i <= lastIndex; i++) {
             if (assetList[i] == assetId) {
-                assetList[i] = assetList[assetList.length - 1];
+                // If it's not the last element, swap with last element
+                if (i < lastIndex) {
+                    assetList[i] = assetList[lastIndex];
+                }
+                // Remove the last element
                 assetList.pop();
                 break;
             }
         }
+
+        emit AssetRemoved(assetId, assetName);
     }
 
-    // حساب إجمالي الأوزان
+    // حساب إجمالي الأوزان (الآن يعتمد على المتغير المخزن)
     function getTotalWeight() public view returns (uint256) {
-        uint256 totalWeight = 0;
-        for (uint256 i = 0; i < assetList.length; i++) {
-            if (assets[assetList[i]].isActive) {
-                totalWeight = totalWeight.add(assets[assetList[i]].weight);
-            }
-        }
-        return totalWeight;
+        return totalActiveWeight;
     }
 }
