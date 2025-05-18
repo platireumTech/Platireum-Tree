@@ -3,81 +3,58 @@ pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "./DynamicAssetManager.sol";
 import "./ValueStabilizer.sol";
-import "./DividendDistributor.sol";
+import "./AssetManager.sol";
 
-contract Tree is ERC20, Ownable {
-    DynamicAssetManager public assetManager;
-    ValueStabilizer public valueStabilizer;
-    DividendDistributor public dividendDistributor;
+contract TreeToken is ERC20, Ownable, IMintable, IBurnable {
+    ValueStabilizer public stabilizer;
+    AssetManager public assetManager;
     
-    uint256 public constant MAX_SUPPLY = 1e9 * 1e18; // 1 billion
-    uint256 public constant DIVIDEND_FEE = 300; // 3%
-    uint256 public constant STABILIZATION_FEE = 200; // 2%
-    uint256 public constant FEE_DENOMINATOR = 10000;
-    
-    mapping(address => bool) public isFeeExempt;
-    
-    event AssetAdded(string name, uint256 weight);
-    event FeesDistributed(uint256 dividendAmount, uint256 stabilizationAmount);
+    uint256 public lastPriceCheck;
+    uint256 public priceCheckInterval = 1 hours;
+    uint256 public initialSupply;
 
     constructor() ERC20("Platireum", "TREE") {
-        assetManager = new DynamicAssetManager();
-        dividendDistributor = new DividendDistributor(address(this), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC
-        valueStabilizer = new ValueStabilizer(address(this), address(assetManager), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+        initialSupply = 100_000 * 1e18; // Initial supply
+        _mint(msg.sender, initialSupply);
         
-        // Initial mint
-        _mint(msg.sender, MAX_SUPPLY / 10);
+        assetManager = new AssetManager(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC
+        stabilizer = new ValueStabilizer(address(this), address(assetManager), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
         
-        // Fee exemptions
-        isFeeExempt[msg.sender] = true;
-        isFeeExempt[address(this)] = true;
-        isFeeExempt[address(dividendDistributor)] = true;
-        isFeeExempt[address(valueStabilizer)] = true;
+        // Initialize asset basket
+        assetManager.addAsset("GOLD", 4000, 0x...goldFeed, 0x...goldToken);
+        assetManager.addAsset("SILVER", 2000, 0x...silverFeed, 0x...silverToken);
+        assetManager.addAsset("STOCKS", 4000, 0x...stocksFeed, 0x...stocksToken);
     }
 
-    function transfer(address recipient, uint256 amount) public override returns (bool) {
-        _transferWithFees(_msgSender(), recipient, amount);
-        return true;
+    function mint(address to, uint256 amount) external override onlyOwner {
+        _mint(to, amount);
     }
 
-    function transferFrom(address sender, address recipient, uint256 amount) public override returns (bool) {
-        _transferWithFees(sender, recipient, amount);
-        _approve(sender, _msgSender(), allowance(sender, _msgSender()) - amount);
-        return true;
+    function burn(uint256 amount) external override {
+        _burn(msg.sender, amount);
     }
 
-    function addAsset(string calldata name, uint256 weight, address priceFeed) external onlyOwner {
-        assetManager.addAsset(name, weight, priceFeed);
-        valueStabilizer.updateReserveRequirements();
-        emit AssetAdded(name, weight);
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _checkPriceAndAdjust();
+        return super.transfer(to, amount);
     }
 
-    // ================= INTERNAL FUNCTIONS ================= //
-    
-    function _transferWithFees(address sender, address recipient, uint256 amount) internal {
-        if (isFeeExempt[sender] || isFeeExempt[recipient]) {
-            _transfer(sender, recipient, amount);
-            return;
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _checkPriceAndAdjust();
+        return super.transferFrom(from, to, amount);
+    }
+
+    function _checkPriceAndAdjust() internal {
+        if (block.timestamp >= lastPriceCheck + priceCheckInterval) {
+            uint256 currentPrice = _getCurrentPrice();
+            stabilizer.adjustSupply(currentPrice);
+            lastPriceCheck = block.timestamp;
         }
-        
-        uint256 dividendAmount = amount * DIVIDEND_FEE / FEE_DENOMINATOR;
-        uint256 stabilizationAmount = amount * STABILIZATION_FEE / FEE_DENOMINATOR;
-        uint256 transferAmount = amount - dividendAmount - stabilizationAmount;
-        
-        _transfer(sender, recipient, transferAmount);
-        
-        if (dividendAmount > 0) {
-            _transfer(sender, address(dividendDistributor), dividendAmount);
-            dividendDistributor.setShare(sender, balanceOf(sender));
-            dividendDistributor.setShare(recipient, balanceOf(recipient));
-        }
-        
-        if (stabilizationAmount > 0) {
-            _transfer(sender, address(valueStabilizer), stabilizationAmount);
-        }
-        
-        emit FeesDistributed(dividendAmount, stabilizationAmount);
+    }
+
+    function _getCurrentPrice() internal view returns (uint256) {
+        // In production: Get weighted average from all asset prices
+        return 1e18; // Placeholder for 1:1 peg
     }
 }
