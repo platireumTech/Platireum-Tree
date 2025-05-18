@@ -6,150 +6,100 @@
 // *  5- Platireum must not be used for gambling.
 
 // SPDX-License-Identifier: MIT
-// Compatible with OpenZeppelin Contracts ^5.0.0
-
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
-import "@openzeppelin/contracts/utils/math/SafeMath.sol";
+import "./ValueStabilizer.sol";
+import "./AssetManager.sol";
+import "./DividendDistributor.sol";
 
-contract AssetBackedToken is ERC20, Ownable {
-    using SafeMath for uint256;
-
-    // Chainlink Interface for Price Feeds
-    interface AggregatorV3Interface {
-        function latestRoundData()
-            external
-            view
-            returns (
-                uint80 roundId,
-                int256 answer,
-                uint256 startedAt,
-                uint256 updatedAt,
-                uint80 answeredInRound
-            );
-    }
-
-    struct Asset {
-        string name;               // Asset Name
-        uint256 weight;            // Asset Weight in Cart
-        address priceFeedAddress;  // Oracle Contract Address of Asset
-        bool isActive;             // Asset Status
-    }
-
-    // Asset Management
-    mapping(bytes32 => Asset) public assets;
-    bytes32[] public assetList;
+contract Tree is ERC20, Ownable, IMintable, IBurnable {
+    ValueStabilizer public stabilizer;
+    AssetManager public assetManager;
+    DividendDistributor public dividendDistributor;
     
-    // متغير لتتبع الوزن الإجمالي النشط
-    uint256 public totalActiveWeight = 0;
+    uint256 public lastPriceCheck;
+    uint256 public priceCheckInterval = 1 hours;
+    uint256 public constant DIVIDEND_FEE = 300; // 3%
+    uint256 public constant STABILIZATION_FEE = 200; // 2%
+    uint256 public constant FEE_DENOMINATOR = 10000;
+    
+    mapping(address => bool) public isFeeExempt;
 
-    // Total weights must equal 100
-    uint256 public constant TOTAL_WEIGHT = 100;
-
-    // Maximum Total Supply
-    uint256 public constant MAX_SUPPLY = 1000000 * 10**18;
-
-    // Events Tracking Asset Changes
-    event AssetAdded(bytes32 indexed assetId, string name, uint256 weight, address priceFeedAddress);
-    event AssetUpdated(bytes32 indexed assetId, string name, uint256 weight, address priceFeedAddress);
-    event AssetRemoved(bytes32 indexed assetId, string name);
+    event FeesProcessed(uint256 dividendAmount, uint256 stabilizationAmount);
 
     constructor() ERC20("Platireum", "TREE") {
-        // Adding Initial Assets with Oracle Addresses
-        addAsset("GOLD", 40, 0x...);   // Oracle Address for Gold
-        addAsset("SILVER", 20, 0x...); // Oracle Address for Silver
-        addAsset("APPLE", 20, 0x...);  // Oracle Address for Apple Stock
-        addAsset("ALPHABET", 20, 0x...); // Oracle Address for Alphabet Stock
+        // Deploy supporting contracts
+        dividendDistributor = new DividendDistributor(address(this), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC
+        assetManager = new AssetManager(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48, address(dividendDistributor));
+        stabilizer = new ValueStabilizer(address(this), address(assetManager), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
+
+        // Initial mint
+        _mint(msg.sender, 100_000 * 10**18);
+        
+        // Configure fee exemptions
+        isFeeExempt[msg.sender] = true;
+        isFeeExempt[address(this)] = true;
+        isFeeExempt[address(dividendDistributor)] = true;
+        isFeeExempt[address(stabilizer)] = true;
     }
 
-    // Add New Asset
-    function addAsset(string memory name, uint256 weight, address priceFeedAddress) public onlyOwner {
-        require(weight > 0 && weight <= 100, "Weight must be between 1 and 100");
-        require(totalActiveWeight.add(weight) <= TOTAL_WEIGHT, "Total weight exceeds 100");
-
-        bytes32 assetId = keccak256(abi.encodePacked(name));
-        require(!assets[assetId].isActive, "Asset already exists");
-
-        assets[assetId] = Asset(name, weight, priceFeedAddress, true);
-        assetList.push(assetId);
-        totalActiveWeight = totalActiveWeight.add(weight);
-
-        emit AssetAdded(assetId, name, weight, priceFeedAddress);
+    function mint(address to, uint256 amount) external override onlyOwner {
+        _mint(to, amount);
     }
 
-    // Fetch Price from Oracle
-    function getPriceFromOracle(address priceFeedAddress) internal view returns (uint256) {
-        AggregatorV3Interface priceFeed = AggregatorV3Interface(priceFeedAddress);
-        (, int256 price, , , ) = priceFeed.latestRoundData();
-        require(price > 0, "Invalid price");
-        return uint256(price);
+    function burn(uint256 amount) external override {
+        _burn(msg.sender, amount);
     }
 
-    // Calculate Currency Price
-    function getTokenPrice() public view returns (uint256) {
-        uint256 weightedPrice = 0;
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _processTransaction(_msgSender(), to, amount);
+        return true;
+    }
 
-        for (uint256 i = 0; i < assetList.length; i++) {
-            bytes32 assetId = assetList[i];
-            if (assets[assetId].isActive) {
-                uint256 price = getPriceFromOracle(assets[assetId].priceFeedAddress);
-                weightedPrice = weightedPrice.add(price.mul(assets[assetId].weight));
-            }
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _processTransaction(from, to, amount);
+        _approve(from, _msgSender(), allowance(from, _msgSender()) - amount);
+        return true;
+    }
+
+    function _processTransaction(address from, address to, uint256 amount) internal {
+        if (isFeeExempt[from] || isFeeExempt[to]) {
+            _transfer(from, to, amount);
+            return;
         }
 
-        return weightedPrice.div(100); // Divide the result by 100 to get the weighted average
-    }
+        uint256 dividendAmount = amount * DIVIDEND_FEE / FEE_DENOMINATOR;
+        uint256 stabilizationAmount = amount * STABILIZATION_FEE / FEE_DENOMINATOR;
+        uint256 transferAmount = amount - dividendAmount - stabilizationAmount;
 
-    // Update Asset
-    function updateAsset(bytes32 assetId, uint256 newWeight, address newPriceFeedAddress) public onlyOwner {
-        require(assets[assetId].isActive, "Asset does not exist");
-        require(newWeight > 0 && newWeight <= 100, "Weight must be between 1 and 100");
-
-        uint256 totalWeightAfterUpdate = totalActiveWeight.sub(assets[assetId].weight).add(newWeight);
-        require(totalWeightAfterUpdate <= TOTAL_WEIGHT, "Total weight exceeds 100");
-
-        totalActiveWeight = totalWeightAfterUpdate;
-        assets[assetId].weight = newWeight;
-        assets[assetId].priceFeedAddress = newPriceFeedAddress;
-
-        emit AssetUpdated(assetId, assets[assetId].name, newWeight, newPriceFeedAddress);
-    }
-
-    // Remove Asset - Improved Version
-    function removeAsset(bytes32 assetId) public onlyOwner {
-        require(assets[assetId].isActive, "Asset does not exist or already inactive");
-        require(assetList.length > 1, "Cannot remove the last asset");
-
-        // Update total weight before removing
-        totalActiveWeight = totalActiveWeight.sub(assets[assetId].weight);
+        _transfer(from, to, transferAmount);
         
-        // Store asset name for event before deactivation
-        string memory assetName = assets[assetId].name;
+        if (dividendAmount > 0) {
+            _transfer(from, address(dividendDistributor), dividendAmount);
+            dividendDistributor.setShare(from, balanceOf(from));
+            dividendDistributor.setShare(to, balanceOf(to));
+        }
         
-        // Deactivate the asset
-        assets[assetId].isActive = false;
-
-        // Gas-efficient removal from array
-        uint256 lastIndex = assetList.length - 1;
-        for (uint256 i = 0; i <= lastIndex; i++) {
-            if (assetList[i] == assetId) {
-                // If it's not the last element, swap with last element
-                if (i < lastIndex) {
-                    assetList[i] = assetList[lastIndex];
-                }
-                // Remove the last element
-                assetList.pop();
-                break;
-            }
+        if (stabilizationAmount > 0) {
+            _transfer(from, address(stabilizer), stabilizationAmount);
         }
 
-        emit AssetRemoved(assetId, assetName);
+        emit FeesProcessed(dividendAmount, stabilizationAmount);
+        _checkPriceAndAdjust();
     }
 
-    // حساب إجمالي الأوزان (الآن يعتمد على المتغير المخزن)
-    function getTotalWeight() public view returns (uint256) {
-        return totalActiveWeight;
+    function _checkPriceAndAdjust() internal {
+        if (block.timestamp >= lastPriceCheck + priceCheckInterval) {
+            uint256 currentPrice = _getCurrentPrice();
+            stabilizer.adjustSupply(currentPrice);
+            lastPriceCheck = block.timestamp;
+        }
+    }
+
+    function _getCurrentPrice() internal view returns (uint256) {
+        // In production: Get weighted average from asset manager
+        return 1e18; // Placeholder for 1:1 peg
     }
 }
