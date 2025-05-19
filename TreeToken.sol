@@ -12,84 +12,67 @@ import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "./ValueStabilizer.sol";
 import "./AssetManager.sol";
-import "./Interfaces.sol";
+import "./SupplyController.sol";
 
-contract Tree is ERC20, Ownable, IMintable, IBurnable {
+contract Tree is ERC20, Ownable {
     ValueStabilizer public stabilizer;
     AssetManager public assetManager;
+    SupplyController public supplyController;
 
     uint256 public lastPriceCheck;
     uint256 public priceCheckInterval = 1 hours;
-    uint256 public constant STABILIZATION_FEE = 200; // 2%
-    uint256 public constant FEE_DENOMINATOR = 10000;
 
-    mapping(address => bool) public isFeeExempt;
+    constructor(address[] memory _goldPriceFeeds) ERC20("Platireum", "TREE") {
+        assetManager = new AssetManager(_goldPriceFeeds);
+        supplyController = new SupplyController(address(this));
+        stabilizer = new ValueStabilizer(address(this), address(assetManager), address(supplyController));
 
-    event FeesProcessed(uint256 stabilizationAmount);
-
-    constructor() ERC20("Platireum", "TREE") {
-        // Deploy supporting contracts
-        assetManager = new AssetManager(0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48); // USDC
-        stabilizer = new ValueStabilizer(address(this), address(assetManager), 0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48);
-
-        // Initial mint
+        // Initial mint to the owner
         _mint(msg.sender, 100_000 * 10**18);
-
-        // Configure fee exemptions
-        isFeeExempt[msg.sender] = true;
-        isFeeExempt[address(this)] = true;
-        isFeeExempt[address(stabilizer)] = true;
-        isFeeExempt[address(assetManager)] = true;
     }
 
-    function mint(address to, uint256 amount) external override onlyOwner {
+    function mint(address to, uint256 amount) external onlyOwner {
         _mint(to, amount);
     }
 
-    function burn(uint256 amount) external override {
-        _burn(msg.sender, amount);
+    function burn(address from, uint256 amount) external onlyOwner {
+        _burn(from, amount);
     }
 
-    function transfer(address to, uint256 amount) public override returns (bool) {
-        _processTransaction(_msgSender(), to, amount);
-        return true;
+    function getAssetValueInGold() public view returns (uint256) {
+        return IAssetManager(assetManager).calculateAssetValueInGold();
     }
 
-    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
-        _processTransaction(from, to, amount);
-        _approve(from, _msgSender(), allowance(from, _msgSender()) - amount);
-        return true;
+    function getCurrentGoldPriceUSD() public view returns (uint256) {
+        return IAssetManager(assetManager).getGoldPriceUSD();
     }
 
-    function _processTransaction(address from, address to, uint256 amount) internal {
-        if (isFeeExempt[from] || isFeeExempt[to]) {
-            _transfer(from, to, amount);
-            return;
-        }
+    function triggerSupplyAdjustment() external onlyOwner {
+        IValueStabilizer(stabilizer).adjustSupplyBasedOnAssetValue();
+    }
 
-        uint256 stabilizationAmount = amount * STABILIZATION_FEE / FEE_DENOMINATOR;
-        uint256 transferAmount = amount - stabilizationAmount;
-
-        _transfer(from, to, transferAmount);
-
-        if (stabilizationAmount > 0) {
-            _transfer(from, address(stabilizer), stabilizationAmount);
-        }
-
-        emit FeesProcessed(stabilizationAmount);
-        _checkPriceAndAdjust();
+    function setPriceCheckInterval(uint256 _interval) external onlyOwner {
+        priceCheckInterval = _interval;
     }
 
     function _checkPriceAndAdjust() internal {
         if (block.timestamp >= lastPriceCheck + priceCheckInterval) {
-            uint256 currentPrice = _getCurrentPrice();
-            stabilizer.adjustSupply(currentPrice);
+            IValueStabilizer(stabilizer).adjustSupplyBasedOnAssetValue();
             lastPriceCheck = block.timestamp;
         }
     }
 
-    function _getCurrentPrice() internal view returns (uint256) {
-        // In production: Get weighted average from asset manager
-        return 1e18; // Placeholder for 1:1 peg
+    function transfer(address to, uint256 amount) public override returns (bool) {
+        _checkPriceAndAdjust();
+        return super.transfer(to, amount);
     }
+
+    function transferFrom(address from, address to, uint256 amount) public override returns (bool) {
+        _checkPriceAndAdjust();
+        return super.transferFrom(from, to, amount);
+    }
+}
+
+interface IValueStabilizer {
+    function adjustSupplyBasedOnAssetValue() external;
 }
