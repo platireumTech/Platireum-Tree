@@ -1,4 +1,4 @@
-Platireum: A Dynamically Valued Asset-Backed Currency
+**Platireum Tree: A Dynamically Valued Asset-Backed Currency**
 
 **Abstract:**
 
