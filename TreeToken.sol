@@ -40,7 +40,7 @@ interface IAssetManager {
 }
 
 
-contract WealthUnit is ERC20, Ownable, Pausable, ReentrancyGuard {
+contract Tree is ERC20, Ownable, Pausable, ReentrancyGuard {
 
     // --- State Variables ---
 
