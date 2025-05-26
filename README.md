@@ -164,22 +164,43 @@ Tree offers several compelling advantages:
 
 ________________________________________
 
-## 7. History Tracking and Auditing
+## 7. Flexible and adaptable Contract
+
+The `Platireum` smart contract is designed to be **flexible and adaptable**, allowing it to function both **with and without external contract links**.
+
+- ✅ **With External Links**: The contract can integrate with external controllers such as `IPriceOracle`, `IMintBurnController`, `IRebalanceController`, and others. These provide enhanced functionality, security, and decentralized control over key operations like minting, burning, rebalancing, and price feeds.
+
+- ⚠️ **Without External Links**: If these external contracts are not available or deployed, the contract can still operate using internal fallback logic:
+  - Price data may use the last known value.
+  - Minting and burning can be restricted to the owner.
+  - Rebalancing can be manually triggered by the owner at set intervals.
+  - Asset management and pausing functions can default to owner control.
+
+- 🛡️ **Safety Checks**: The contract includes safeguards to ensure that all operations remain valid and secure even when external links are absent or set to `address(0)`.
+
+In summary, the Platireum contract is built to be **robust and functional in various deployment scenarios**, whether used in a fully decentralized setup with external controllers or in a simplified mode with minimal dependencies.
+
+![Tree_Contract_Links_En](https://github.com/user-attachments/assets/d4317955-f1e7-477c-bd24-39d68b13bfe9)
+
+
+________________________________________
+
+## 8. History Tracking and Auditing
 
 Tree includes robust on-chain history tracking for transparency and auditability.
 
-### 7.1. AssetChange Struct and assetHistory Array
+### 8.1. AssetChange Struct and assetHistory Array
 
 Every significant change to an asset's properties (addition, removal, weight change) is recorded in the `assetHistory` array. Each entry includes:
 
 - The asset's state at the time of change (symbol, token address, quantity, weight, precious metal status, oracle ID).
 - The timestamp of the change.
 
-### 7.2. History Management (`_recordAssetChange`)
+### 8.2. History Management (`_recordAssetChange`)
 
 To manage storage costs, a `maxHistoryEntries` limit is set. When the limit is reached, the oldest entry is removed to make space for new ones.
 
-### 7.3. Query Functions
+### 8.3. Query Functions
 
 - `getFullHistory()`: Allows retrieval of all recorded asset changes.
 - `getHistoryInRange(uint256 _from, uint256 _to)`: Enables querying changes within a specific timestamp range.
@@ -188,7 +209,7 @@ This provides a verifiable audit trail for how the Tree basket has evolved over 
 
 ________________________________________
 
-## 8. Future Development and Roadmap
+## 9. Future Development and Roadmap
 
 The current Tree contract lays a strong foundation. Future developments could include:
 
@@ -200,6 +221,6 @@ The current Tree contract lays a strong foundation. Future developments could in
 
 ________________________________________
 
-## 9. Conclusion
+## 10. Conclusion
 
 Tree represents a significant step forward in the evolution of digital assets. By combining the transparency and programmability of blockchain with a dynamically managed, diversified asset basket, Tree aims to deliver a resilient, stable, and inherently valuable digital unit of wealth. Its focus on robust rebalancing, multi-layered oracle integration, and transparent history tracking positions it as a reliable instrument for navigating the complexities of the global financial landscape. Tree is not just a token; it is a meticulously engineered foundation for future decentralized finance.
