@@ -478,7 +478,7 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
         //
         // Placeholder for the actual rebalancing logic.
         // Example:
-        // uint256 totalVestraTokenValueInUSD = 100 * 1e18; // Example: assuming 1 VestraToken aims for 100 USD value
+        // uint256 totalPlatireumValueInUSD = 100 * 1e18; // Example: assuming 1 Platireum aims for 100 USD value
         // string[] memory symbols = assetSymbolsSet.values();
         // for (uint256 i = 0; i < symbols.length; i++) {
         //     string memory symbol = symbols[i];
@@ -487,7 +487,7 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
         //     uint256 assetPriceUSD = _getAssetPriceInUSD(asset.oracleFeedId, symbol);
         //     require(assetPriceUSD > 0, "WU: Asset price is zero");
         //
-        //     uint256 targetAssetValue = totalVestraTokenValueInUSD.mul(asset.weightNumerator).div(WEIGHT_DENOMINATOR);
+        //     uint256 targetAssetValue = totalPlatireumValueInUSD.mul(asset.weightNumerator).div(WEIGHT_DENOMINATOR);
         //     uint256 newQuantity = targetAssetValue.mul(1e18).div(assetPriceUSD); // Adjust 1e18 for oracle decimals if different
         //
         //     asset.quantity = newQuantity; // Update the dynamic quantity
