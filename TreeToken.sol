@@ -545,8 +545,8 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
         uint256 goldPricePerGramUSD = assets[GOLD_SYMBOL].lastKnownPrice; // Use last known Gold price
         require(goldPricePerGramUSD > 0, "Vestra: Gold price must be greater than zero");
 
-        // Convert total VestraToken value from USD to grams of Gold
-        goldGramsScaled = (totalVestraTokenValueInUSD.mul(1e18)).div(goldPricePerGramUSD); // Adjust scaling as needed
+        // Convert total Platireum value from USD to grams of Gold
+        goldGramsScaled = (totalPlatireumValueInUSD.mul(1e18)).div(goldPricePerGramUSD); // Adjust scaling as needed
 
         return goldGramsScaled;
     }
