@@ -516,7 +516,7 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
     // Function to get the value of 1 Platireum in grams of Gold
     // This assumes `quantity` field of Asset struct is updated by rebalance to reflect real composition
     function getPlatireumValueInGold() public view returns (uint256 goldGramsScaled) {
-        uint256 totalVestraTokenValueInUSD = 0;
+        uint256 totalPlatireumValueInUSD = 0;
 
         string[] memory symbols = assetSymbolsSet.values();
         for (uint i = 0; i < symbols.length; i++) {
