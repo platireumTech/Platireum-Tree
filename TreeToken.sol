@@ -513,9 +513,9 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
 
     // --- Public Getters (Read Functions) ---
 
-    // Function to get the value of 1 VestraToken in grams of Gold
+    // Function to get the value of 1 Platireum in grams of Gold
     // This assumes `quantity` field of Asset struct is updated by rebalance to reflect real composition
-    function getVestraTokenValueInGold() public view returns (uint256 goldGramsScaled) {
+    function getPlatireumValueInGold() public view returns (uint256 goldGramsScaled) {
         uint256 totalVestraTokenValueInUSD = 0;
 
         string[] memory symbols = assetSymbolsSet.values();
@@ -534,10 +534,10 @@ contract Platireum is ERC20, Ownable, Pausable, ReentrancyGuard {
             require(assetPriceUSD > 0, "Vestra: Asset price is zero (last known)");
 
 
-            // This calculation sums the USD value of fixed quantities per 1 VestraToken
+            // This calculation sums the USD value of fixed quantities per 1 Platireum
             // If asset.quantity is updated by rebalance to reflect the target weights,
             // then this will reflect the actual value.
-            totalVestraTokenValueInUSD = totalVestraTokenValueInUSD.add(
+            totalPlatireumValueInUSD = totalPlatireumValueInUSD.add(
                 currentAsset.quantity.mul(assetPriceUSD).div(1e18) // Adjust 1e18 for price decimals
             );
         }
